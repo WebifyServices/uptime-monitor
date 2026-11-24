@@ -57,7 +57,7 @@ function toRecord(row: Row): MonitorRecord {
 }
 
 function serialize(monitor: Monitor): string {
-  return JSON.stringify(monitor);
+  return JSON.stringify(Object.fromEntries(Object.entries(monitor).filter(([key]) => key !== "source")));
 }
 
 /** Creates the repository over an open database. */

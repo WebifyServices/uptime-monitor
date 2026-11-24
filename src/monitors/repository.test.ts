@@ -57,6 +57,12 @@ describe("monitor repository", () => {
     expect(repo.get("shared")).toMatchObject({ source: "runtime", interval: 300 });
   });
 
+  it("keeps monitors readable when records read back are synced again", () => {
+    repo.syncConfig([make("a"), make("b")]);
+    repo.syncConfig(repo.list());
+    expect(repo.list().map((m) => m.id).sort()).toEqual(["a", "b"]);
+  });
+
   it("updates a config monitor whose definition changed", () => {
     repo.syncConfig([make("a")]);
     expect(repo.syncConfig([make("a", { interval: 120 })]).updated).toEqual(["a"]);
