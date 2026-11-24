@@ -57,4 +57,15 @@ export const migrations: readonly Migration[] = [
       CREATE INDEX idx_alert_deliveries_incident ON alert_deliveries (incident_id);
     `,
   },
+  {
+    version: 2,
+    sql: `
+      CREATE TABLE daily_latency (
+        monitor_id TEXT NOT NULL REFERENCES monitors(id) ON DELETE CASCADE,
+        day TEXT NOT NULL,
+        avg_latency_ms REAL NOT NULL,
+        PRIMARY KEY (monitor_id, day)
+      );
+    `,
+  },
 ];

@@ -21,14 +21,14 @@ describe("openDatabase", () => {
   it("creates every table on a new path and applies nothing on an up-to-date database", () => {
     const path = tempDbPath();
     const db = track(openDatabase(path));
-    expect(tables(db)).toEqual(["alert_deliveries", "check_results", "daily_uptime", "incidents", "monitors", "schema_version"]);
+    expect(tables(db)).toEqual(["alert_deliveries", "check_results", "daily_latency", "daily_uptime", "incidents", "monitors", "schema_version"]);
     expect(db.pragma("journal_mode", { simple: true })).toBe("wal");
     expect(db.pragma("foreign_keys", { simple: true })).toBe(1);
     db.close();
     open.pop();
 
     const again = track(openDatabase(path));
-    expect(again.prepare("SELECT COUNT(*) AS n FROM schema_version").get()).toEqual({ n: 1 });
+    expect(again.prepare("SELECT COUNT(*) AS n FROM schema_version").get()).toEqual({ n: 2 });
   });
 
   it("creates missing parent directories for a new database path", () => {
