@@ -19,6 +19,13 @@ export class ConfigMonitorRemovalError extends Error {
   }
 }
 
+export class ConfigMonitorConflictError extends Error {
+  constructor(readonly id: string) {
+    super(`config monitor "${id}" has the same id as a monitor added at runtime; rename one of them`);
+    this.name = "ConfigMonitorConflictError";
+  }
+}
+
 export interface SyncSummary {
   added: string[];
   updated: string[];
@@ -94,11 +101,12 @@ export function createMonitorRepository(db: Db): MonitorRepository {
         const wanted = new Set(monitors.map((m) => m.id));
         for (const monitor of monitors) {
           const existing = selectOne.get(monitor.id) as Row | undefined;
+          if (existing && existing.source !== "config") throw new ConfigMonitorConflictError(monitor.id);
           const definition = serialize(monitor);
           if (!existing) {
             insert.run(monitor.id, "config", monitor.enabled ? 1 : 0, definition, Date.now());
             summary.added.push(monitor.id);
-          } else if (existing.source !== "config" || existing.definition !== definition) {
+          } else if (existing.definition !== definition) {
             update.run(monitor.enabled ? 1 : 0, definition, monitor.id);
             summary.updated.push(monitor.id);
           }

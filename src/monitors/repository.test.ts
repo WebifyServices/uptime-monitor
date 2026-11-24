@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { openDatabase, type Db } from "../storage/database.js";
 import { tempDbPath } from "../storage/test-db.js";
-import { ConfigMonitorRemovalError, MonitorExistsError, createMonitorRepository, type MonitorRepository } from "./repository.js";
+import { ConfigMonitorConflictError, ConfigMonitorRemovalError, MonitorExistsError, createMonitorRepository, type MonitorRepository } from "./repository.js";
 import { parseMonitor } from "./schema.js";
 
 const make = (name: string, extra: Record<string, unknown> = {}) =>
@@ -46,6 +46,15 @@ describe("monitor repository", () => {
     const summary = repo.syncConfig([make("a")]);
     expect(summary.removed).toEqual(["b"]);
     expect(repo.list().map((m) => m.id).sort()).toEqual(["a", "runtime"]);
+  });
+
+  it("refuses a config monitor whose id belongs to a runtime monitor and changes nothing", () => {
+    repo.add(make("shared", { interval: 300 }));
+    repo.syncConfig([make("a")]);
+    expect(() => repo.syncConfig([make("a"), make("shared")])).toThrow(ConfigMonitorConflictError);
+    expect(repo.get("shared")).toMatchObject({ source: "runtime", interval: 300 });
+    repo.syncConfig([make("a")]);
+    expect(repo.get("shared")).toMatchObject({ source: "runtime", interval: 300 });
   });
 
   it("updates a config monitor whose definition changed", () => {
