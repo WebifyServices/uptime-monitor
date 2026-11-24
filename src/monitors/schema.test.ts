@@ -60,6 +60,13 @@ describe("parseMonitor", () => {
     expect(issuesFor({ name: "x", type: "icmp", target: "example.com" })).toMatch(/type/);
   });
 
+  it("rejects a malformed explicit TLS port but accepts an omitted one", () => {
+    expect(issuesFor({ name: "x", type: "tls", target: "example.com:100000" })).toMatch(/target/);
+    expect(issuesFor({ name: "x", type: "tls", target: "example.com:abc" })).toMatch(/target/);
+    expect(parseMonitor({ name: "x", type: "tls", target: "example.com" }).target).toBe("example.com");
+    expect(parseMonitor({ name: "x", type: "tls", target: "example.com:8443" }).target).toBe("example.com:8443");
+  });
+
   it("rejects a TCP target without a port", () => {
     expect(issuesFor({ name: "x", type: "tcp", target: "example.com" })).toMatch(/target/);
   });

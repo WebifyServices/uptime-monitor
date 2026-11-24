@@ -87,6 +87,10 @@ const monitorShape = z.strictObject({
   })),
 });
 
+function hasMalformedPort(target: string): boolean {
+  return /^(\[[^\]]+\]|[^:]+):/.test(target) && !/^(\[[^\]]+\]|[^:]+):(\d{1,5})$/.test(target);
+}
+
 function hostAndPort(target: string): { host: string; port: number | null } {
   const match = /^(\[[^\]]+\]|[^:]+):(\d{1,5})$/.exec(target);
   if (!match?.[1] || !match[2]) return { host: target, port: null };
@@ -126,7 +130,7 @@ export const monitorSchema = monitorShape
     }
     if (raw.type === "tls") {
       const { port } = hostAndPort(target);
-      if (port !== null && (port < 1 || port > 65535)) {
+      if (hasMalformedPort(target) || (port !== null && (port < 1 || port > 65535))) {
         ctx.addIssue({ code: "custom", path: ["target"], message: "port must be from 1 to 65535" });
       }
     }
