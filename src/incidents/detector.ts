@@ -21,6 +21,11 @@ export type IncidentEvent =
 
 export type IncidentListener = (event: IncidentEvent) => void;
 
+export interface DetectorOptions {
+  /** Called when a listener throws; the event still reaches every other listener. */
+  onListenerError?: (error: unknown, event: IncidentEvent) => void;
+}
+
 export interface MonitorCounters {
   state: DetectorState;
   consecutiveFailures: number;
@@ -55,12 +60,18 @@ function streak(results: readonly CheckResult[], status: CheckResult["status"]):
 }
 
 /** Creates a detector that persists incidents through the result store. */
-export function createIncidentDetector(store: ResultStore): IncidentDetector {
+export function createIncidentDetector(store: ResultStore, options: DetectorOptions = {}): IncidentDetector {
   const counters = new Map<string, MonitorCounters>();
   const listeners = new Set<IncidentListener>();
 
   const emit = (event: IncidentEvent): IncidentEvent => {
-    for (const listener of [...listeners]) listener(event);
+    for (const listener of [...listeners]) {
+      try {
+        listener(event);
+      } catch (error) {
+        options.onListenerError?.(error, event);
+      }
+    }
     return event;
   };
 

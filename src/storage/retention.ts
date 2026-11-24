@@ -1,5 +1,6 @@
 // Rolls completed days of raw results into daily rollups and deletes raw results past the retention window.
 import type { Db } from "./database.js";
+import { MAX_THRESHOLD } from "../monitors/schema.js";
 import { DAY_MS, dayKey, startOfDay } from "./days.js";
 
 export const DEFAULT_RAW_RETENTION_DAYS = 30;
@@ -10,6 +11,11 @@ export interface RetentionOptions {
   rawRetentionDays?: number;
   rollupRetentionDays?: number;
   intervalMs?: number;
+  /**
+   * Results each monitor keeps past the raw window, newest first, so a restart can rebuild the
+   * detector's streaks. Never below MAX_THRESHOLD in production; tests lower it.
+   */
+  keepLatestPerMonitor?: number;
   /** Called when a scheduled run throws; the schedule keeps going. */
   onError?: (error: unknown) => void;
 }
@@ -38,6 +44,7 @@ export function createRetention(db: Db, options: RetentionOptions = {}): Retenti
   const rawDays = options.rawRetentionDays ?? DEFAULT_RAW_RETENTION_DAYS;
   const rollupDays = options.rollupRetentionDays ?? DEFAULT_ROLLUP_RETENTION_DAYS;
   const intervalMs = options.intervalMs ?? RETENTION_INTERVAL_MS;
+  const keepLatest = options.keepLatestPerMonitor ?? MAX_THRESHOLD;
 
   const addUptime = db.prepare(
     `INSERT INTO daily_uptime (monitor_id, day, up_count, total_count)
@@ -59,8 +66,9 @@ export function createRetention(db: Db, options: RetentionOptions = {}): Retenti
   const markRolledUp = db.prepare("UPDATE check_results SET rolled_up = 1 WHERE rolled_up = 0 AND checked_at < ?");
   const deleteRaw = db.prepare(
     `DELETE FROM check_results WHERE rolled_up = 1 AND checked_at < ? AND id NOT IN (
-       SELECT (SELECT id FROM check_results l WHERE l.monitor_id = m.monitor_id ORDER BY checked_at DESC, id DESC LIMIT 1)
-       FROM (SELECT DISTINCT monitor_id FROM check_results) m)`,
+       SELECT id FROM (
+         SELECT id, ROW_NUMBER() OVER (PARTITION BY monitor_id ORDER BY checked_at DESC, id DESC) AS rank FROM check_results
+       ) WHERE rank <= ?)`,
   );
   const deleteUptime = db.prepare("DELETE FROM daily_uptime WHERE day < ?");
   const deleteLatency = db.prepare("DELETE FROM daily_latency WHERE day < ?");
@@ -75,7 +83,7 @@ export function createRetention(db: Db, options: RetentionOptions = {}): Retenti
       const rolledUp = addUptime.run(today).changes;
       addLatency.run(today);
       markRolledUp.run(today);
-      const rawDeleted = deleteRaw.run(Math.min(rawCutoff, today)).changes;
+      const rawDeleted = deleteRaw.run(Math.min(rawCutoff, today), keepLatest).changes;
       const rollupsDeleted = deleteUptime.run(rollupCutoff).changes;
       deleteLatency.run(rollupCutoff);
       return { rolledUp, rawDeleted, rollupsDeleted };

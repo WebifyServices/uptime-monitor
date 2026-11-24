@@ -4,6 +4,7 @@ import { createMonitorRepository } from "../monitors/repository.js";
 import { parseMonitor } from "../monitors/schema.js";
 import { openDatabase, type Db } from "../storage/database.js";
 import { createResultStore, type ResultStore } from "../storage/result-store.js";
+import { createRetention } from "../storage/retention.js";
 import { tempDbPath } from "../storage/test-db.js";
 import { createIncidentDetector, type IncidentDetector, type IncidentEvent, type Thresholds } from "./detector.js";
 
@@ -87,6 +88,29 @@ describe("incident detector", () => {
     const restarted = createIncidentDetector(store);
     expect(restarted.restore("a", thresholds)).toEqual({ state: "up", consecutiveFailures: 2, consecutiveSuccesses: 0 });
     expect(feed(restarted, "down")).toMatchObject({ type: "opened" });
+  });
+
+  it("rebuilds partial streaks after retention has pruned the monitor's older results", () => {
+    for (let i = 0; i < 5; i++) feed(detector, "up");
+    feed(detector, "down");
+    feed(detector, "down");
+    createRetention(db).run(Date.now());
+    const restarted = createIncidentDetector(store);
+    expect(restarted.restore("a", thresholds)).toEqual({ state: "up", consecutiveFailures: 2, consecutiveSuccesses: 0 });
+    expect(feed(restarted, "down")).toMatchObject({ type: "opened" });
+  });
+
+  it("delivers an event to every listener when one throws, and reports the failure", () => {
+    const failures: unknown[] = [];
+    const isolated = createIncidentDetector(store, { onListenerError: (error) => failures.push(error) });
+    const received: IncidentEvent[] = [];
+    isolated.subscribe(() => {
+      throw new Error("listener broke");
+    });
+    isolated.subscribe((event) => received.push(event));
+    for (let i = 0; i < 3; i++) feed(isolated, "down");
+    expect(received.map((e) => e.type)).toEqual(["opened"]);
+    expect(failures).toEqual([new Error("listener broke")]);
   });
 
   it("moves a new monitor from unknown to up without an event", () => {
