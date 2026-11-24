@@ -1,4 +1,6 @@
 // Opens the SQLite file and brings its schema to the latest migration.
+import { mkdirSync } from "node:fs";
+import { dirname } from "node:path";
 import Database from "better-sqlite3";
 import { migrations as builtInMigrations, type Migration } from "./migrations.js";
 
@@ -35,6 +37,7 @@ export function applyMigrations(db: Db, migrations: readonly Migration[]): numbe
 
 /** Opens (creating if needed) the database at `path` with WAL and foreign keys on, and migrates it. */
 export function openDatabase(path: string, migrations: readonly Migration[] = builtInMigrations): Db {
+  if (path !== ":memory:" && !path.startsWith("file:")) mkdirSync(dirname(path), { recursive: true });
   const db = new Database(path);
   try {
     db.pragma("journal_mode = WAL");

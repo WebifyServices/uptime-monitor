@@ -1,3 +1,6 @@
+import { existsSync, mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { MigrationError, applyMigrations, openDatabase, type Db } from "./database.js";
 import { tempDbPath } from "./test-db.js";
@@ -26,6 +29,13 @@ describe("openDatabase", () => {
 
     const again = track(openDatabase(path));
     expect(again.prepare("SELECT COUNT(*) AS n FROM schema_version").get()).toEqual({ n: 1 });
+  });
+
+  it("creates missing parent directories for a new database path", () => {
+    const path = join(mkdtempSync(join(tmpdir(), "uptime-db-")), "data", "nested", "uptime.sqlite");
+    const db = openDatabase(path);
+    db.close();
+    expect(existsSync(path)).toBe(true);
   });
 
   it("rolls back a failing migration and names its number", () => {
