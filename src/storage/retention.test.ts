@@ -91,6 +91,17 @@ describe("retention", () => {
     expect(latencies()).toEqual([{ monitor_id: "a", day: "2026-06-14", avg_latency_ms: 20, sample_count: 2 }]);
   });
 
+  it("adds a late result to a day already thinned by pruning", () => {
+    const retention = createRetention(db);
+    record(NOW - 40 * DAY_MS, "up", 10);
+    record(NOW - 40 * DAY_MS + 1000, "up", 10);
+    retention.run(NOW);
+    record(NOW - 40 * DAY_MS + 2000, "down", 40);
+    retention.run(NOW);
+    expect(rollups()).toEqual([{ monitor_id: "a", day: "2026-05-06", up_count: 2, total_count: 3 }]);
+    expect(latencies()).toEqual([{ monitor_id: "a", day: "2026-05-06", avg_latency_ms: 20, sample_count: 3 }]);
+  });
+
   it("honors custom windows", () => {
     record(NOW - 6 * DAY_MS, "up", 10);
     record(NOW - 5 * DAY_MS, "up", 10);
@@ -113,16 +124,18 @@ describe("retention", () => {
   });
 
   it("runs at start and on its interval, and stops", async () => {
-    record(Date.now() - 2 * DAY_MS, "up", 10);
+    const twoDaysAgo = Date.now() - 2 * DAY_MS;
+    const total = (): number => (db.prepare("SELECT SUM(total_count) AS n FROM daily_uptime").get() as { n: number }).n;
+    record(twoDaysAgo, "up", 10);
     const retention = createRetention(db, { intervalMs: 20 });
     retention.start();
-    expect(rollups()).toHaveLength(1);
-    db.prepare("DELETE FROM daily_uptime").run();
+    expect(total()).toBe(1);
+    record(twoDaysAgo + 1000, "up", 10);
     await new Promise((resolve) => setTimeout(resolve, 100));
-    expect(rollups()).toHaveLength(1);
+    expect(total()).toBe(2);
     retention.stop();
-    db.prepare("DELETE FROM daily_uptime").run();
+    record(twoDaysAgo + 2000, "up", 10);
     await new Promise((resolve) => setTimeout(resolve, 100));
-    expect(rollups()).toHaveLength(0);
+    expect(total()).toBe(2);
   });
 });

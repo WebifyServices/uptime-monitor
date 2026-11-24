@@ -36,7 +36,10 @@ export interface DailyUptime {
 export interface StatusQueries {
   /** Every enabled monitor with its current state, last check, open incident and uptime. */
   getStatusOverview(now?: number): MonitorStatus[];
-  /** Exactly `days` entries ending with today (UTC), oldest first; null percent where no data. */
+  /**
+   * Exactly `days` entries ending with `now`'s UTC day, oldest first; null percent where no data.
+   * Every figure counts only checks up to `now`.
+   */
   getDailyUptime(monitorId: string, days: number, now?: number): DailyUptime[];
   /** Uptime percentage over the last `days` UTC days including today, or null with no checks. */
   getUptimePercent(monitorId: string, days: number, now?: number): number | null;
@@ -71,22 +74,25 @@ const percent = (up: number, total: number): number | null =>
 /** Creates the queries over an open database and the monitor repository. */
 export function createStatusQueries(db: Db, monitors: MonitorRepository): StatusQueries {
   const rollupCounts = db.prepare(
-    "SELECT SUM(up_count) AS up, COALESCE(SUM(total_count), 0) AS total FROM daily_uptime WHERE monitor_id = ? AND day >= ? AND day <= ?",
-  );
-  const rawCountsUnrolled = db.prepare(
-    `SELECT SUM(status = 'up') AS up, COUNT(*) AS total FROM check_results
-     WHERE monitor_id = ? AND checked_at >= ? AND checked_at <= ?
-       AND strftime('%Y-%m-%d', checked_at / 1000, 'unixepoch') NOT IN (SELECT day FROM daily_uptime WHERE monitor_id = ?)`,
-  );
-  const rawCountsAll = db.prepare(
-    "SELECT SUM(status = 'up') AS up, COUNT(*) AS total FROM check_results WHERE monitor_id = ? AND checked_at >= ? AND checked_at <= ?",
+    "SELECT SUM(up_count) AS up, COALESCE(SUM(total_count), 0) AS total FROM daily_uptime WHERE monitor_id = ? AND day >= ? AND day < ?",
   );
   const rollupDays = db.prepare(
-    "SELECT day, up_count AS up, total_count AS total FROM daily_uptime WHERE monitor_id = ? AND day >= ? AND day <= ?",
+    "SELECT day, up_count AS up, total_count AS total FROM daily_uptime WHERE monitor_id = ? AND day >= ? AND day < ?",
   );
-  const rawDays = db.prepare(
+  const rollupOn = db.prepare("SELECT up_count AS up, total_count AS total FROM daily_uptime WHERE monitor_id = ? AND day = ?");
+  const rawCounts = db.prepare(
+    "SELECT SUM(status = 'up') AS up, COUNT(*) AS total FROM check_results WHERE monitor_id = ? AND checked_at >= ? AND checked_at <= ?",
+  );
+  const unrolledCounts = db.prepare(
+    `SELECT SUM(status = 'up') AS up, COUNT(*) AS total FROM check_results
+     WHERE monitor_id = ? AND rolled_up = 0 AND checked_at >= ? AND checked_at <= ?`,
+  );
+  const unrolledDays = db.prepare(
     `SELECT strftime('%Y-%m-%d', checked_at / 1000, 'unixepoch') AS day, SUM(status = 'up') AS up, COUNT(*) AS total
-     FROM check_results WHERE monitor_id = ? AND checked_at >= ? AND checked_at <= ? GROUP BY day`,
+     FROM check_results WHERE monitor_id = ? AND rolled_up = 0 AND checked_at >= ? AND checked_at < ? GROUP BY day`,
+  );
+  const rolledCountOn = db.prepare(
+    "SELECT COUNT(*) AS total FROM check_results WHERE monitor_id = ? AND rolled_up = 1 AND checked_at >= ? AND checked_at < ?",
   );
   const lastResult = db.prepare(
     "SELECT checked_at, latency_ms FROM check_results WHERE monitor_id = ? ORDER BY checked_at DESC, id DESC LIMIT 1",
@@ -95,15 +101,33 @@ export function createStatusQueries(db: Db, monitors: MonitorRepository): Status
   const incidentsAll = db.prepare("SELECT * FROM incidents ORDER BY started_at DESC, id DESC LIMIT ?");
   const incidentsFor = db.prepare("SELECT * FROM incidents WHERE monitor_id = ? ORDER BY started_at DESC, id DESC LIMIT ?");
 
+  const add = (a: Counts, b: Counts): Counts => ({ up: (a.up ?? 0) + (b.up ?? 0), total: a.total + b.total });
+
+  /**
+   * Counts for `now`'s own day, up to `now`. Raw results answer exactly while the day still holds
+   * all of them; once pruning has thinned a rolled-up day, its whole rollup is the best answer left.
+   */
+  function cutoffDayCounts(monitorId: string, now: number): Counts {
+    const dayStart = startOfDay(now);
+    const rollup = rollupOn.get(monitorId, dayKey(now)) as Counts | undefined;
+    const rolledLeft = (rolledCountOn.get(monitorId, dayStart, dayStart + DAY_MS) as Counts).total;
+    if (rollup && rollup.total > rolledLeft) return add(rollup, unrolledCounts.get(monitorId, dayStart, now) as Counts);
+    return rawCounts.get(monitorId, dayStart, now) as Counts;
+  }
+
   function uptimeOverDays(monitorId: string, days: number, now: number): number | null {
     const firstDay = startOfDay(now - (days - 1) * DAY_MS);
-    const rolled = rollupCounts.get(monitorId, dayKey(firstDay), dayKey(startOfDay(now))) as Counts;
-    const raw = rawCountsUnrolled.get(monitorId, firstDay, now, monitorId) as Counts;
-    return percent((rolled.up ?? 0) + (raw.up ?? 0), rolled.total + raw.total);
+    const cutoffDay = startOfDay(now);
+    const before = add(
+      rollupCounts.get(monitorId, dayKey(firstDay), dayKey(cutoffDay)) as Counts,
+      unrolledCounts.get(monitorId, firstDay, cutoffDay - 1) as Counts,
+    );
+    const counts = add(before, cutoffDayCounts(monitorId, now));
+    return percent(counts.up ?? 0, counts.total);
   }
 
   function uptimeLast24h(monitorId: string, now: number): number | null {
-    const raw = rawCountsAll.get(monitorId, now - DAY_MS, now) as Counts;
+    const raw = rawCounts.get(monitorId, now - DAY_MS, now) as Counts;
     return percent(raw.up ?? 0, raw.total);
   }
 
@@ -134,13 +158,18 @@ export function createStatusQueries(db: Db, monitors: MonitorRepository): Status
     },
     getDailyUptime(monitorId, days, now = Date.now()) {
       const firstDay = startOfDay(now - (days - 1) * DAY_MS);
+      const cutoffDay = startOfDay(now);
       const byDay = new Map<string, Counts>();
-      for (const row of rawDays.all(monitorId, firstDay, now) as Array<Counts & { day: string }>) {
-        byDay.set(row.day, { up: row.up ?? 0, total: row.total });
+      const merge = (day: string, counts: Counts): void => {
+        byDay.set(day, add(byDay.get(day) ?? { up: 0, total: 0 }, counts));
+      };
+      for (const row of rollupDays.all(monitorId, dayKey(firstDay), dayKey(cutoffDay)) as Array<Counts & { day: string }>) {
+        merge(row.day, row);
       }
-      for (const row of rollupDays.all(monitorId, dayKey(firstDay), dayKey(now)) as Array<Counts & { day: string }>) {
-        byDay.set(row.day, { up: row.up ?? 0, total: row.total });
+      for (const row of unrolledDays.all(monitorId, firstDay, cutoffDay) as Array<Counts & { day: string }>) {
+        merge(row.day, row);
       }
+      merge(dayKey(now), cutoffDayCounts(monitorId, now));
       return Array.from({ length: days }, (_, index) => {
         const day = dayKey(firstDay + index * DAY_MS);
         const counts = byDay.get(day);

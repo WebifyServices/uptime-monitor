@@ -5,6 +5,7 @@ import { parseMonitor } from "../monitors/schema.js";
 import { openDatabase, type Db } from "./database.js";
 import { DAY_MS } from "./days.js";
 import { createResultStore, type ResultStore } from "./result-store.js";
+import { createRetention } from "./retention.js";
 import { createStatusQueries, type StatusQueries } from "./status-queries.js";
 import { tempDbPath } from "./test-db.js";
 
@@ -67,7 +68,26 @@ describe("status queries", () => {
 
   it("does not double count a rolled-up day whose raw results still exist", () => {
     for (let i = 0; i < 10; i++) record("a", NOW - DAY_MS + i * 1000, i < 9 ? "up" : "down");
-    rollup("2026-06-14", 5, 10);
+    createRetention(db).run(NOW);
+    expect(queries.getUptimePercent("a", 7, NOW)).toBe(90);
+    expect(queries.getDailyUptime("a", 2, NOW)[0]).toMatchObject({ day: "2026-06-14", upCount: 9, totalCount: 10 });
+  });
+
+  it("counts only checks up to a past cutoff, the same before and after its day is rolled up", () => {
+    const noon14th = Date.UTC(2026, 5, 14, 12, 0, 0);
+    record("a", noon14th - 3600_000, "up");
+    record("a", noon14th + 3600_000, "down");
+    const before = { percent: queries.getUptimePercent("a", 1, noon14th), day: queries.getDailyUptime("a", 1, noon14th) };
+    createRetention(db).run(NOW);
+    expect(before.percent).toBe(100);
+    expect(queries.getUptimePercent("a", 1, noon14th)).toBe(100);
+    expect(queries.getDailyUptime("a", 1, noon14th)).toEqual(before.day);
+  });
+
+  it("counts a late result for a rolled-up day before the next retention run", () => {
+    record("a", NOW - DAY_MS, "up");
+    createRetention(db).run(NOW);
+    record("a", NOW - DAY_MS + 1000, "down");
     expect(queries.getUptimePercent("a", 7, NOW)).toBe(50);
   });
 

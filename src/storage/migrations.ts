@@ -67,6 +67,8 @@ export const migrations: readonly Migration[] = [
         sample_count INTEGER NOT NULL,
         PRIMARY KEY (monitor_id, day)
       );
+      ALTER TABLE check_results ADD COLUMN rolled_up INTEGER NOT NULL DEFAULT 0;
+      CREATE INDEX idx_check_results_unrolled ON check_results (monitor_id, checked_at) WHERE rolled_up = 0;
     `,
   },
 ];
