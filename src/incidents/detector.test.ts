@@ -100,6 +100,33 @@ describe("incident detector", () => {
     expect(feed(restarted, "down")).toMatchObject({ type: "opened" });
   });
 
+  it("retries a transition whose incident write failed", () => {
+    const flaky: ResultStore = { ...store };
+    let failOpen = true;
+    flaky.openIncident = (...args) => {
+      if (failOpen) throw new Error("database is locked");
+      return store.openIncident(...args);
+    };
+    let failResolve = false;
+    flaky.resolveIncident = (...args) => {
+      if (failResolve) throw new Error("database is locked");
+      return store.resolveIncident(...args);
+    };
+    const retrying = createIncidentDetector(flaky);
+    feed(retrying, "down");
+    feed(retrying, "down");
+    expect(() => feed(retrying, "down")).toThrow(/locked/);
+    expect(retrying.getState("a").state).toBe("unknown");
+    failOpen = false;
+    expect(feed(retrying, "down")).toMatchObject({ type: "opened" });
+    failResolve = true;
+    feed(retrying, "up");
+    expect(() => feed(retrying, "up")).toThrow(/locked/);
+    expect(retrying.getState("a").state).toBe("down");
+    failResolve = false;
+    expect(feed(retrying, "up")).toMatchObject({ type: "resolved" });
+  });
+
   it("delivers an event to every listener when one throws, and reports the failure", () => {
     const failures: unknown[] = [];
     const isolated = createIncidentDetector(store, { onListenerError: (error) => failures.push(error) });

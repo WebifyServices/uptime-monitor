@@ -95,10 +95,12 @@ export function createIncidentDetector(store: ResultStore, options: DetectorOpti
         current.consecutiveFailures++;
         current.consecutiveSuccesses = 0;
         if (current.state === "down" || current.consecutiveFailures < thresholds.failuresBeforeDown) return undefined;
-        current.state = "down";
-        const existing = store.getOpenIncident(result.monitorId);
-        if (existing) return undefined;
+        if (store.getOpenIncident(result.monitorId)) {
+          current.state = "down";
+          return undefined;
+        }
         const incident = store.openIncident(result.monitorId, result.error, result.checkedAt);
+        current.state = "down";
         return emit({ type: "opened", monitorId: result.monitorId, incident, result });
       }
 
@@ -106,8 +108,8 @@ export function createIncidentDetector(store: ResultStore, options: DetectorOpti
       current.consecutiveFailures = 0;
       if (current.state === "unknown") current.state = "up";
       if (current.state !== "down" || current.consecutiveSuccesses < thresholds.successesBeforeRecovered) return undefined;
-      current.state = "up";
       const incident = store.resolveIncident(result.monitorId, result.checkedAt);
+      current.state = "up";
       if (!incident) return undefined;
       return emit({ type: "resolved", monitorId: result.monitorId, incident, result });
     },
