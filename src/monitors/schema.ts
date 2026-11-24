@@ -93,14 +93,30 @@ const monitorShape = z.strictObject({
   })),
 });
 
-function hasMalformedPort(target: string): boolean {
-  return /^(\[[^\]]+\]|[^:]+):/.test(target) && !/^(\[[^\]]+\]|[^:]+):(\d{1,5})$/.test(target);
+interface HostPort {
+  host: string;
+  port: number | null;
+  /** A port separator is present but what follows it is not a port number. */
+  malformed: boolean;
 }
 
-function hostAndPort(target: string): { host: string; port: number | null } {
-  const match = /^(\[[^\]]+\]|[^:]+):(\d{1,5})$/.exec(target);
-  if (!match?.[1] || !match[2]) return { host: target, port: null };
-  return { host: match[1], port: Number(match[2]) };
+/** Splits `host`, `host:port`, `[ipv6]`, `[ipv6]:port` or a bare IPv6 address. */
+function parseHostPort(target: string): HostPort {
+  const portOf = (text: string): number | null => (/^\d{1,5}$/.test(text) ? Number(text) : null);
+  if (target.startsWith("[")) {
+    const close = target.indexOf("]");
+    const host = close > 1 ? target.slice(1, close) : "";
+    const rest = close === -1 ? "" : target.slice(close + 1);
+    if (!host) return { host: target, port: null, malformed: true };
+    if (rest === "") return { host, port: null, malformed: false };
+    const port = rest.startsWith(":") ? portOf(rest.slice(1)) : null;
+    return { host, port, malformed: port === null };
+  }
+  const colons = target.split(":").length - 1;
+  if (colons !== 1) return { host: target, port: null, malformed: false };
+  const [host = "", portText = ""] = target.split(":");
+  const port = portOf(portText);
+  return { host, port, malformed: !host || port === null };
 }
 
 /**
@@ -129,14 +145,14 @@ export const monitorSchema = monitorShape
       }
     }
     if (raw.type === "tcp") {
-      const { port } = hostAndPort(target);
-      if (port === null || port < 1 || port > 65535) {
+      const { port, malformed } = parseHostPort(target);
+      if (malformed || port === null || port < 1 || port > 65535) {
         ctx.addIssue({ code: "custom", path: ["target"], message: "must be host:port with a port from 1 to 65535" });
       }
     }
     if (raw.type === "tls") {
-      const { port } = hostAndPort(target);
-      if (hasMalformedPort(target) || (port !== null && (port < 1 || port > 65535))) {
+      const { port, malformed } = parseHostPort(target);
+      if (malformed || (port !== null && (port < 1 || port > 65535))) {
         ctx.addIssue({ code: "custom", path: ["target"], message: "port must be from 1 to 65535" });
       }
     }
@@ -197,7 +213,8 @@ export function parseMonitor(input: unknown): Monitor {
   );
 }
 
-/** Splits a monitor target into host and optional port (IPv6 hosts keep their brackets). */
+/** Splits a monitor target into host and optional port; an IPv6 host comes back without its brackets. */
 export function splitTarget(target: string): { host: string; port: number | null } {
-  return hostAndPort(target);
+  const { host, port } = parseHostPort(target);
+  return { host, port };
 }

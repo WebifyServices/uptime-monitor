@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MonitorValidationError, parseMonitor, type Monitor } from "./schema.js";
+import { MonitorValidationError, parseMonitor, splitTarget, type Monitor } from "./schema.js";
 
 describe("parseMonitor", () => {
   it("fills the documented defaults for a minimal HTTP monitor", () => {
@@ -69,6 +69,22 @@ describe("parseMonitor", () => {
     expect(issuesFor({ name: "x", type: "tls", target: "example.com:abc" })).toMatch(/target/);
     expect(parseMonitor({ name: "x", type: "tls", target: "example.com" }).target).toBe("example.com");
     expect(parseMonitor({ name: "x", type: "tls", target: "example.com:8443" }).target).toBe("example.com:8443");
+  });
+
+  it("accepts IPv6 TLS and TCP targets, bracketed with or without a port", () => {
+    expect(parseMonitor({ name: "x", type: "tls", target: "[::1]" }).target).toBe("[::1]");
+    expect(parseMonitor({ name: "x", type: "tls", target: "[::1]:8443" }).target).toBe("[::1]:8443");
+    expect(parseMonitor({ name: "x", type: "tcp", target: "[2001:db8::1]:5432" }).target).toBe("[2001:db8::1]:5432");
+    expect(issuesFor({ name: "x", type: "tls", target: "[::1]:abc" })).toMatch(/target/);
+    expect(issuesFor({ name: "x", type: "tls", target: "[::1" })).toMatch(/target/);
+    expect(issuesFor({ name: "x", type: "tcp", target: "[::1]" })).toMatch(/target/);
+  });
+
+  it("splits a target into host and port", () => {
+    expect(splitTarget("example.com:443")).toEqual({ host: "example.com", port: 443 });
+    expect(splitTarget("example.com")).toEqual({ host: "example.com", port: null });
+    expect(splitTarget("[::1]:8443")).toEqual({ host: "::1", port: 8443 });
+    expect(splitTarget("[::1]")).toEqual({ host: "::1", port: null });
   });
 
   it("rejects a TCP target without a port", () => {
