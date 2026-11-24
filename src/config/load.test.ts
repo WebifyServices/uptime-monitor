@@ -83,6 +83,11 @@ monitors:
     ).toThrow(/notifiers\[1\]\.name.*duplicate/);
   });
 
+  it("rejects an alert rule that names a notifier the config does not define", () => {
+    const text = `notifiers:\n  - { name: ops, type: webhook, url: "https://example.com" }\nalertRules:\n  - { notifiers: [ops, opss] }\n`;
+    expect(() => parseConfig(text, {})).toThrow(/alertRules\[0\]\.notifiers\[1\].*opss/);
+  });
+
   it("rejects unknown top-level keys and invalid YAML", () => {
     expect(() => parseConfig("serverr: {}\n", {})).toThrow(ConfigError);
     expect(() => parseConfig("monitors: [\n", {})).toThrow(/invalid YAML/);

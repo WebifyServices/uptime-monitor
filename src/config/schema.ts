@@ -93,6 +93,13 @@ export const appConfigSchema = z
       }
       seenNotifiers.add(notifier.name);
     });
+    config.alertRules.forEach((rule, ruleIndex) => {
+      rule.notifiers.forEach((name, index) => {
+        if (!seenNotifiers.has(name)) {
+          ctx.addIssue({ code: "custom", path: ["alertRules", ruleIndex, "notifiers", index], message: `no notifier named "${name}"` });
+        }
+      });
+    });
   });
 
 export type AppConfig = z.output<typeof appConfigSchema>;
