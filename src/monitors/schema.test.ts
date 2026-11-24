@@ -52,6 +52,10 @@ describe("parseMonitor", () => {
     expect(issuesFor({ name: "x", url: "https://example.com", interval: 5, timeout: 2 })).toMatch(/interval/);
   });
 
+  it("rejects an interval longer than a day, so no timer overflows", () => {
+    expect(issuesFor({ name: "x", url: "https://example.com", interval: 3_000_000, timeout: 2_200_000 })).toMatch(/interval/);
+  });
+
   it("rejects a timeout that is not shorter than the interval", () => {
     expect(issuesFor({ name: "x", url: "https://example.com", interval: 20, timeout: 20 })).toMatch(/timeout/);
   });

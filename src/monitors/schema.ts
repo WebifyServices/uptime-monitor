@@ -2,6 +2,8 @@
 import { z } from "zod";
 
 export const MIN_INTERVAL_SECONDS = 10;
+/** One day: keeps every interval and timeout well inside the range a Node timer can hold. */
+export const MAX_INTERVAL_SECONDS = 86_400;
 export const DEFAULT_INTERVAL_SECONDS = 60;
 export const DEFAULT_TIMEOUT_SECONDS = 10;
 export const DEFAULT_FAILURES_BEFORE_DOWN = 3;
@@ -75,7 +77,11 @@ const monitorShape = z.strictObject({
   type: monitorTypeSchema.default("http"),
   target: z.string().trim().min(1).optional(),
   url: z.string().trim().min(1).optional(),
-  interval: z.number().min(MIN_INTERVAL_SECONDS, `must be at least ${MIN_INTERVAL_SECONDS} seconds`).default(DEFAULT_INTERVAL_SECONDS),
+  interval: z
+    .number()
+    .min(MIN_INTERVAL_SECONDS, `must be at least ${MIN_INTERVAL_SECONDS} seconds`)
+    .max(MAX_INTERVAL_SECONDS, `must be at most ${MAX_INTERVAL_SECONDS} seconds (one day)`)
+    .default(DEFAULT_INTERVAL_SECONDS),
   timeout: z.number().positive().default(DEFAULT_TIMEOUT_SECONDS),
   enabled: z.boolean().default(true),
   tags: z.array(z.string().trim().min(1)).default([]),
