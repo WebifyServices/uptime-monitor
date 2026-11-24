@@ -72,6 +72,15 @@ describe("retention", () => {
     expect(latencies()).toHaveLength(1);
   });
 
+  it("never rebuilds a pruned day's rollup when the raw window grows", () => {
+    record(NOW - 40 * DAY_MS, "down", 10);
+    record(NOW - 40 * DAY_MS + 1000, "up", 30);
+    createRetention(db, { rawRetentionDays: 30 }).run(NOW);
+    createRetention(db, { rawRetentionDays: 60 }).run(NOW);
+    expect(rollups()).toEqual([{ monitor_id: "a", day: "2026-05-06", up_count: 1, total_count: 2 }]);
+    expect(latencies()).toEqual([{ monitor_id: "a", day: "2026-05-06", avg_latency_ms: 20 }]);
+  });
+
   it("honors custom windows", () => {
     record(NOW - 6 * DAY_MS, "up", 10);
     record(NOW - 5 * DAY_MS, "up", 10);

@@ -38,20 +38,14 @@ export function createRetention(db: Db, options: RetentionOptions = {}): Retenti
   const upsertUptime = db.prepare(
     `INSERT INTO daily_uptime (monitor_id, day, up_count, total_count)
      SELECT monitor_id, strftime('%Y-%m-%d', checked_at / 1000, 'unixepoch') AS day, SUM(status = 'up'), COUNT(*)
-     FROM check_results r WHERE checked_at < ?
-       AND (checked_at >= ? OR NOT EXISTS (
-         SELECT 1 FROM daily_uptime u WHERE u.monitor_id = r.monitor_id AND u.day = strftime('%Y-%m-%d', r.checked_at / 1000, 'unixepoch')))
-     GROUP BY monitor_id, day
-     ON CONFLICT (monitor_id, day) DO UPDATE SET up_count = excluded.up_count, total_count = excluded.total_count`,
+     FROM check_results WHERE checked_at < ? GROUP BY monitor_id, day
+     ON CONFLICT (monitor_id, day) DO NOTHING`,
   );
   const upsertLatency = db.prepare(
     `INSERT INTO daily_latency (monitor_id, day, avg_latency_ms)
      SELECT monitor_id, strftime('%Y-%m-%d', checked_at / 1000, 'unixepoch') AS day, AVG(latency_ms)
-     FROM check_results r WHERE checked_at < ?
-       AND (checked_at >= ? OR NOT EXISTS (
-         SELECT 1 FROM daily_latency l WHERE l.monitor_id = r.monitor_id AND l.day = strftime('%Y-%m-%d', r.checked_at / 1000, 'unixepoch')))
-     GROUP BY monitor_id, day
-     ON CONFLICT (monitor_id, day) DO UPDATE SET avg_latency_ms = excluded.avg_latency_ms`,
+     FROM check_results WHERE checked_at < ? GROUP BY monitor_id, day
+     ON CONFLICT (monitor_id, day) DO NOTHING`,
   );
   const deleteRaw = db.prepare(
     `DELETE FROM check_results WHERE checked_at < ? AND id NOT IN (
@@ -68,8 +62,8 @@ export function createRetention(db: Db, options: RetentionOptions = {}): Retenti
     const rawCutoff = today - rawDays * DAY_MS;
     const rollupCutoff = dayKey(today - rollupDays * DAY_MS);
     return db.transaction((): RetentionSummary => {
-      const rolledUp = upsertUptime.run(today, rawCutoff).changes;
-      upsertLatency.run(today, rawCutoff);
+      const rolledUp = upsertUptime.run(today).changes;
+      upsertLatency.run(today);
       const rawDeleted = deleteRaw.run(Math.min(rawCutoff, today)).changes;
       const rollupsDeleted = deleteUptime.run(rollupCutoff).changes;
       deleteLatency.run(rollupCutoff);
