@@ -73,10 +73,24 @@ describe("retention", () => {
   });
 
   it("honors custom windows", () => {
+    record(NOW - 6 * DAY_MS, "up", 10);
     record(NOW - 5 * DAY_MS, "up", 10);
     createRetention(db, { rawRetentionDays: 2 }).run(NOW);
-    expect(rawCount()).toBe(0);
-    expect(rollups()).toHaveLength(1);
+    expect(rawCount()).toBe(1);
+    expect(rollups()).toHaveLength(2);
+  });
+
+  it("keeps each monitor's latest result past the window, without re-rolling its day", () => {
+    record(NOW - 40 * DAY_MS, "down", 10);
+    record(NOW - 40 * DAY_MS + 1000, "up", 30);
+    const retention = createRetention(db);
+    retention.run(NOW);
+    expect(rawCount()).toBe(1);
+    const latest = db.prepare("SELECT status, latency_ms FROM check_results").get();
+    expect(latest).toEqual({ status: "up", latency_ms: 30 });
+    retention.run(NOW + DAY_MS);
+    expect(rollups()).toEqual([{ monitor_id: "a", day: "2026-05-06", up_count: 1, total_count: 2 }]);
+    expect(latencies()).toEqual([{ monitor_id: "a", day: "2026-05-06", avg_latency_ms: 20 }]);
   });
 
   it("runs at start and on its interval, and stops", async () => {
