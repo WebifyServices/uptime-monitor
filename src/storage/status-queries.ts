@@ -71,7 +71,7 @@ const percent = (up: number, total: number): number | null =>
 /** Creates the queries over an open database and the monitor repository. */
 export function createStatusQueries(db: Db, monitors: MonitorRepository): StatusQueries {
   const rollupCounts = db.prepare(
-    "SELECT SUM(up_count) AS up, COALESCE(SUM(total_count), 0) AS total FROM daily_uptime WHERE monitor_id = ? AND day >= ?",
+    "SELECT SUM(up_count) AS up, COALESCE(SUM(total_count), 0) AS total FROM daily_uptime WHERE monitor_id = ? AND day >= ? AND day <= ?",
   );
   const rawCountsUnrolled = db.prepare(
     `SELECT SUM(status = 'up') AS up, COUNT(*) AS total FROM check_results
@@ -97,7 +97,7 @@ export function createStatusQueries(db: Db, monitors: MonitorRepository): Status
 
   function uptimeOverDays(monitorId: string, days: number, now: number): number | null {
     const firstDay = startOfDay(now - (days - 1) * DAY_MS);
-    const rolled = rollupCounts.get(monitorId, dayKey(firstDay)) as Counts;
+    const rolled = rollupCounts.get(monitorId, dayKey(firstDay), dayKey(startOfDay(now))) as Counts;
     const raw = rawCountsUnrolled.get(monitorId, firstDay, now, monitorId) as Counts;
     return percent((rolled.up ?? 0) + (raw.up ?? 0), rolled.total + raw.total);
   }

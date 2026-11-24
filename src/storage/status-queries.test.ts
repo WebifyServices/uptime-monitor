@@ -58,6 +58,13 @@ describe("status queries", () => {
     expect(uptime.last90d).toBe(round((90 + 95 + 49) / 251));
   });
 
+  it("leaves rollups after the window's last day out of its uptime", () => {
+    rollup("2026-06-13", 1, 1);
+    rollup("2026-06-14", 0, 1);
+    const endOf13th = Date.UTC(2026, 5, 13, 18, 0, 0);
+    expect(queries.getUptimePercent("a", 1, endOf13th)).toBe(100);
+  });
+
   it("does not double count a rolled-up day whose raw results still exist", () => {
     for (let i = 0; i < 10; i++) record("a", NOW - DAY_MS + i * 1000, i < 9 ? "up" : "down");
     rollup("2026-06-14", 5, 10);
