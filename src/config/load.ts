@@ -48,8 +48,10 @@ function mergeDefaults(document: Record<string, unknown>): Record<string, unknow
   if (!isRecord(defaults) || !Array.isArray(monitors)) return document;
   const merged = monitors.map((monitor) => {
     if (!isRecord(monitor)) return monitor;
-    const thresholds = isRecord(defaults["thresholds"]) || isRecord(monitor["thresholds"])
-      ? { ...(isRecord(defaults["thresholds"]) ? defaults["thresholds"] : {}), ...(isRecord(monitor["thresholds"]) ? monitor["thresholds"] : {}) }
+    const own = monitor["thresholds"];
+    const mergeable = own === undefined || isRecord(own);
+    const thresholds = mergeable && (isRecord(defaults["thresholds"]) || isRecord(own))
+      ? { ...(isRecord(defaults["thresholds"]) ? defaults["thresholds"] : {}), ...(isRecord(own) ? own : {}) }
       : undefined;
     return { ...defaults, ...monitor, ...(thresholds ? { thresholds } : {}) };
   });

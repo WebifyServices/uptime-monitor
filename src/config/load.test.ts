@@ -51,6 +51,17 @@ monitors:
     expect(() => parseConfig("notifiers:\n  - { name: hook, type: webhook, url: \"${MISSING_URL}\" }\n", {})).toThrow(/MISSING_URL/);
   });
 
+  it("rejects a malformed monitor thresholds value instead of replacing it with the defaults", () => {
+    const text = (value: string) => `defaults:
+  thresholds:
+    failuresBeforeDown: 5
+monitors:
+  - { name: A, url: "https://example.com", thresholds: ${value} }
+`;
+    expect(() => parseConfig(text("3"), {})).toThrow(/monitors\[0\]\.thresholds/);
+    expect(() => parseConfig(text("null"), {})).toThrow(/monitors\[0\]\.thresholds/);
+  });
+
   it("reports validation errors with the YAML path", () => {
     const text = `monitors:
   - { name: A, url: "https://example.com" }
