@@ -1,0 +1,55 @@
+# Example configuration. Every value shown here is optional unless noted.
+server:
+  host: 0.0.0.0
+  port: 8080
+  statusPageTitle: Service status
+
+storage:
+  path: ./data/uptime.sqlite
+
+# Applied to every monitor that does not set the field itself.
+defaults:
+  interval: 60
+  timeout: 10
+  thresholds:
+    failuresBeforeDown: 3
+    successesBeforeRecovered: 2
+
+monitors:
+  - name: Example website
+    url: https://example.com
+    http:
+      method: GET
+      expectedStatus: [200-399]
+      bodyContains: Example Domain
+    tags: [web]
+  - name: Example database
+    type: tcp
+    target: db.example.com:5432
+    interval: 30
+  - name: Example certificate
+    type: tls
+    target: example.com
+    tls:
+      warnDays: 14
+
+notifiers:
+  - name: ops-webhook
+    type: webhook
+    url: https://hooks.example.com/uptime
+    headers:
+      Authorization: Bearer ${WEBHOOK_TOKEN}
+  - name: ops-email
+    type: email
+    smtp:
+      host: smtp.example.com
+      port: 587
+      user: alerts@example.com
+      password: ${SMTP_PASSWORD}
+    from: alerts@example.com
+    to: [oncall@example.com]
+
+alertRules:
+  - name: everything
+    notifiers: [ops-webhook, ops-email]
+    events: [down, recovered]
