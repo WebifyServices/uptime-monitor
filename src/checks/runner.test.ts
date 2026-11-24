@@ -68,6 +68,18 @@ describe("runCheck", () => {
     expect(aborted).toBe(true);
   });
 
+  it("never starts the probe when the caller's signal has already aborted", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    let calls = 0;
+    const outcome = await runCheck(monitor, controller.signal, registryWith(() => {
+      calls += 1;
+      return Promise.resolve({ status: "up" });
+    }));
+    expect(outcome).toMatchObject({ status: "down", error: "check cancelled" });
+    expect(calls).toBe(0);
+  });
+
   it("stops when the caller's signal aborts", async () => {
     const controller = new AbortController();
     const pending = runCheck(monitor, controller.signal, registryWith(() => new Promise(() => undefined)));

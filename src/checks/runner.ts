@@ -40,7 +40,10 @@ export async function runCheck(
   aborted.catch(() => undefined);
 
   try {
-    const running = Promise.resolve().then(() => probe(monitor, combined));
+    const running = Promise.resolve().then(() => {
+      combined.throwIfAborted();
+      return probe(monitor, combined);
+    });
     running.catch(() => undefined);
     const outcome = await Promise.race([running, aborted]);
     return result(outcome.status, outcome.status === "down" ? (outcome.error ?? "check failed") : null, outcome.certExpiresAt ?? null);
