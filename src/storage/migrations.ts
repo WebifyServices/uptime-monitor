@@ -64,6 +64,7 @@ export const migrations: readonly Migration[] = [
         monitor_id TEXT NOT NULL REFERENCES monitors(id) ON DELETE CASCADE,
         day TEXT NOT NULL,
         avg_latency_ms REAL NOT NULL,
+        sample_count INTEGER NOT NULL,
         PRIMARY KEY (monitor_id, day)
       );
     `,

@@ -34,7 +34,7 @@ describe("retention", () => {
     const summary = createRetention(db).run(NOW);
     expect(summary.rolledUp).toBe(1);
     expect(rollups()).toEqual([{ monitor_id: "a", day: "2026-06-14", up_count: 2, total_count: 3 }]);
-    expect(latencies()).toEqual([{ monitor_id: "a", day: "2026-06-14", avg_latency_ms: 20 }]);
+    expect(latencies()).toEqual([{ monitor_id: "a", day: "2026-06-14", avg_latency_ms: 20, sample_count: 3 }]);
   });
 
   it("produces the same rows when run twice", () => {
@@ -66,7 +66,7 @@ describe("retention", () => {
     expect(createRetention(db).run(NOW).rolledUp).toBe(1);
     expect(rollups()).toHaveLength(1);
     db.prepare("INSERT INTO daily_uptime VALUES ('a', '2025-01-01', 1, 1)").run();
-    db.prepare("INSERT INTO daily_latency VALUES ('a', '2025-01-01', 1)").run();
+    db.prepare("INSERT INTO daily_latency VALUES ('a', '2025-01-01', 1, 1)").run();
     expect(createRetention(db).run(NOW).rollupsDeleted).toBe(1);
     expect(rollups()).toHaveLength(1);
     expect(latencies()).toHaveLength(1);
@@ -78,7 +78,17 @@ describe("retention", () => {
     createRetention(db, { rawRetentionDays: 30 }).run(NOW);
     createRetention(db, { rawRetentionDays: 60 }).run(NOW);
     expect(rollups()).toEqual([{ monitor_id: "a", day: "2026-05-06", up_count: 1, total_count: 2 }]);
-    expect(latencies()).toEqual([{ monitor_id: "a", day: "2026-05-06", avg_latency_ms: 20 }]);
+    expect(latencies()).toEqual([{ monitor_id: "a", day: "2026-05-06", avg_latency_ms: 20, sample_count: 2 }]);
+  });
+
+  it("counts a result that lands after its day was rolled up", () => {
+    const retention = createRetention(db);
+    record(NOW - DAY_MS, "up", 10);
+    retention.run(NOW);
+    record(NOW - DAY_MS + 1000, "down", 30);
+    expect(retention.run(NOW + 1000).rolledUp).toBe(1);
+    expect(rollups()).toEqual([{ monitor_id: "a", day: "2026-06-14", up_count: 1, total_count: 2 }]);
+    expect(latencies()).toEqual([{ monitor_id: "a", day: "2026-06-14", avg_latency_ms: 20, sample_count: 2 }]);
   });
 
   it("honors custom windows", () => {
@@ -99,7 +109,7 @@ describe("retention", () => {
     expect(latest).toEqual({ status: "up", latency_ms: 30 });
     retention.run(NOW + DAY_MS);
     expect(rollups()).toEqual([{ monitor_id: "a", day: "2026-05-06", up_count: 1, total_count: 2 }]);
-    expect(latencies()).toEqual([{ monitor_id: "a", day: "2026-05-06", avg_latency_ms: 20 }]);
+    expect(latencies()).toEqual([{ monitor_id: "a", day: "2026-05-06", avg_latency_ms: 20, sample_count: 2 }]);
   });
 
   it("runs at start and on its interval, and stops", async () => {

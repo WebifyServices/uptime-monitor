@@ -22,7 +22,11 @@ export interface RetentionSummary {
 }
 
 export interface Retention {
-  /** Rolls up every completed day, then prunes; repeating it changes nothing further. */
+  /**
+   * Rolls up every completed day, then prunes; repeating it changes nothing further.
+   * A day's rollup is rewritten only when its raw results outnumber it, so a result that lands
+   * after its day was rolled up is counted, and a day thinned by pruning keeps its rollup.
+   */
   run(now?: number): RetentionSummary;
   /** Runs once now, then hourly; the timer never keeps the process alive. */
   start(): void;
@@ -39,13 +43,15 @@ export function createRetention(db: Db, options: RetentionOptions = {}): Retenti
     `INSERT INTO daily_uptime (monitor_id, day, up_count, total_count)
      SELECT monitor_id, strftime('%Y-%m-%d', checked_at / 1000, 'unixepoch') AS day, SUM(status = 'up'), COUNT(*)
      FROM check_results WHERE checked_at < ? GROUP BY monitor_id, day
-     ON CONFLICT (monitor_id, day) DO NOTHING`,
+     ON CONFLICT (monitor_id, day) DO UPDATE SET up_count = excluded.up_count, total_count = excluded.total_count
+     WHERE excluded.total_count > daily_uptime.total_count`,
   );
   const upsertLatency = db.prepare(
-    `INSERT INTO daily_latency (monitor_id, day, avg_latency_ms)
-     SELECT monitor_id, strftime('%Y-%m-%d', checked_at / 1000, 'unixepoch') AS day, AVG(latency_ms)
+    `INSERT INTO daily_latency (monitor_id, day, avg_latency_ms, sample_count)
+     SELECT monitor_id, strftime('%Y-%m-%d', checked_at / 1000, 'unixepoch') AS day, AVG(latency_ms), COUNT(*)
      FROM check_results WHERE checked_at < ? GROUP BY monitor_id, day
-     ON CONFLICT (monitor_id, day) DO NOTHING`,
+     ON CONFLICT (monitor_id, day) DO UPDATE SET avg_latency_ms = excluded.avg_latency_ms, sample_count = excluded.sample_count
+     WHERE excluded.sample_count > daily_latency.sample_count`,
   );
   const deleteRaw = db.prepare(
     `DELETE FROM check_results WHERE checked_at < ? AND id NOT IN (
