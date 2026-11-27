@@ -22,13 +22,13 @@ The HTTP, TCP and TLS probes, alerts, the scheduler, the REST API, the status pa
 
 ## Run the checks
 
-Use Node.js 22.
+Use Node.js 22 and pnpm.
 
 ```sh
-npm ci
-npm run lint
-npm test
-npm run build
+pnpm install
+pnpm lint
+pnpm test
+pnpm build
 ```
 
 ## License
