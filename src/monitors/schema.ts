@@ -8,6 +8,8 @@ export const DEFAULT_INTERVAL_SECONDS = 60;
 export const DEFAULT_TIMEOUT_SECONDS = 10;
 export const DEFAULT_FAILURES_BEFORE_DOWN = 3;
 export const DEFAULT_SUCCESSES_BEFORE_RECOVERED = 2;
+/** The most consecutive results a threshold may count; retention keeps at least this many per monitor. */
+export const MAX_THRESHOLD = 100;
 export const DEFAULT_TLS_WARN_DAYS = 14;
 
 export const monitorTypeSchema = z.enum(["http", "tcp", "tls"]);
@@ -63,12 +65,8 @@ const tlsOptionsSchema = z.strictObject({
 });
 
 const thresholdsSchema = z.strictObject({
-  failuresBeforeDown: z.number().int().min(1).default(DEFAULT_FAILURES_BEFORE_DOWN),
-  successesBeforeRecovered: z
-    .number()
-    .int()
-    .min(1)
-    .default(DEFAULT_SUCCESSES_BEFORE_RECOVERED),
+  failuresBeforeDown: z.number().int().min(1).max(MAX_THRESHOLD).default(DEFAULT_FAILURES_BEFORE_DOWN),
+  successesBeforeRecovered: z.number().int().min(1).max(MAX_THRESHOLD).default(DEFAULT_SUCCESSES_BEFORE_RECOVERED),
 });
 
 const monitorShape = z.strictObject({

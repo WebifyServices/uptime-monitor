@@ -57,4 +57,18 @@ export const migrations: readonly Migration[] = [
       CREATE INDEX idx_alert_deliveries_incident ON alert_deliveries (incident_id);
     `,
   },
+  {
+    version: 2,
+    sql: `
+      CREATE TABLE daily_latency (
+        monitor_id TEXT NOT NULL REFERENCES monitors(id) ON DELETE CASCADE,
+        day TEXT NOT NULL,
+        avg_latency_ms REAL NOT NULL,
+        sample_count INTEGER NOT NULL,
+        PRIMARY KEY (monitor_id, day)
+      );
+      ALTER TABLE check_results ADD COLUMN rolled_up INTEGER NOT NULL DEFAULT 0;
+      CREATE INDEX idx_check_results_unrolled ON check_results (monitor_id, checked_at) WHERE rolled_up = 0;
+    `,
+  },
 ];
